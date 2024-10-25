@@ -2,76 +2,88 @@
 #include <sstream>
 #include <algorithm>
 #include <numeric>
-#include <regex>
 
-// Adds numbers from the input string
 int StringCalculator::add(const std::string& numbers) {
-    if (numbers.empty()) 
-        return 0;
-    std::string delimiter = ",|\n";
-    std::string input = numbers;
     
-    // Handle custom delimiters
-    if (numbers.substr(0, 2) == "//") {
-        delimiter = getCustomDelimiter(numbers);
-        input = getNumberString(numbers);
+    if (numbers.empty()) return 0;
+
+    ExtractNumbersAndDelimiters(numbers);
+    
+    parseNumbers();
+    validateNumbers();
+    parsedNumbers = filterLargeNumbers();
+
+    return sumOfNumbers();
+}
+
+void StringCalculator::ExtractNumbersAndDelimiters(const std::string& input) {
+    
+    if (input.substr(0, 2) == "//") { //checks if there is a custom delimiter
+        setCustomDelimiter(input);
+        extractNumberString(input);
+    } else {
+        numberString = input;
     }
-    std::vector<int> nums = parseNumbers(input, delimiter);
-    validateNumbers(nums);
-    nums = filterLargeNumbers(nums);
-    return sumNumbers(nums);
 }
 
-// Get custom delimiter from input
-std::string StringCalculator::getCustomDelimiter(const std::string& input) {
-    std::regex customDelimRegex("//(\\[.*?\\])+\n");
-    std::smatch match;
-    if (std::regex_search(input, match, customDelimRegex)) {
-        std::string customDelimiters = match.str();
-        customDelimiters.erase(0, 2);  // Remove the "//"
-        customDelimiters.pop_back();   // Remove the "\n"
-        std::regex escapeRegex(R"([\[|\]])");
-        return std::regex_replace(customDelimiters, escapeRegex, "");
-    }
-    return input.substr(2, input.find("\n") - 2);
+void StringCalculator::setCustomDelimiter(const std::string& input) {
+    size_t newlinePos = input.find("\n");
+    delimiter = input.substr(2, newlinePos - 2);
 }
 
-// Extract the part of the string with numbers, excluding the delimiter line
-std::string StringCalculator::getNumberString(const std::string& input) {
-    return input.substr(input.find("\n") + 1);
+void StringCalculator::extractNumberString(const std::string& input) {
+    numberString = input.substr(input.find("\n") + 1);
 }
 
-// Converts string to an integer
-int StringCalculator::toInt(const std::string& number) {
+int StringCalculator::convertToInt(const std::string& number) {
     return std::stoi(number);
 }
 
-// Parses input string into vector of integers
-std::vector<int> StringCalculator::parseNumbers(const std::string& numbers, const std::string& delimiter) {
-    std::vector<int> result;
-    std::regex delimRegex(delimiter);
-    std::sregex_token_iterator iter(numbers.begin(), numbers.end(), delimRegex, -1);
-    std::sregex_token_iterator end;
 
-    while (iter != end) {
-        std::string token = *iter++;
-        if (!token.empty()) {
-            result.push_back(toInt(token));
-        }
+void StringCalculator::parseNumbers() {
+    parsedNumbers.clear();
+    size_t startPos = 0;
+    size_t pos = 0;
+
+    // Parse each token from the numberString
+    while ((pos = findNextDelimiter(startPos)) != std::string::npos) {
+        parseSingleNumber(startPos, pos);
+        startPos = pos + 1;
     }
-    return result;
+
+    // Handle the last part of the string
+    if (startPos < numberString.length()) {
+        parseSingleNumber(startPos, numberString.length());
+    }
 }
 
-// Validates numbers and checks for negatives
-void StringCalculator::validateNumbers(const std::vector<int>& numbers) {
-    std::vector<int> negatives = findNegativeNumbers(numbers);
-    throwIfNegatives(negatives);
+size_t StringCalculator::findNextDelimiter(size_t startPos) const {
+    return numberString.find_first_of(delimiter, startPos);
 }
 
-// Finds all negative numbers in the list
-std::vector<int> StringCalculator::findNegativeNumbers(const std::vector<int>& numbers) {
+void StringCalculator::parseSingleNumber(size_t startPos, size_t pos) {
+    std::string token = numberString.substr(startPos, pos - startPos);
+    if (!token.empty()) {
+        parsedNumbers.push_back(convertToInt(token));
+    }
+}
+
+
+void StringCalculator::validateNumbers() {
+    checkForNegatives();
+}
+
+void StringCalculator::checkForNegatives() {
+    std::vector<int> negatives = gatherNegatives();
+
+    if (!negatives.empty()) {
+        throw std::runtime_error(buildNegativeErrorMessage(negatives));
+    }
+}
+
+std::vector<int> StringCalculator::gatherNegatives() const {
     std::vector<int> negatives;
-    for (int num : numbers) {
+    for (int num : parsedNumbers) {
         if (num < 0) {
             negatives.push_back(num);
         }
@@ -79,25 +91,20 @@ std::vector<int> StringCalculator::findNegativeNumbers(const std::vector<int>& n
     return negatives;
 }
 
-// Throws an exception if there are negative numbers
-void StringCalculator::throwIfNegatives(const std::vector<int>& negatives) {
-    if (!negatives.empty()) {
-        std::string errorMsg = "negatives not allowed: ";
-        for (int neg : negatives) {
-            errorMsg += std::to_string(neg) + " ";
-        }
-        throw std::runtime_error(errorMsg);
+std::string StringCalculator::buildNegativeErrorMessage(const std::vector<int>& negatives) const {
+    std::string errorMsg = "negatives not allowed: ";
+    for (int neg : negatives) {
+        errorMsg += std::to_string(neg) + " ";
     }
+    return errorMsg;
 }
 
-// Sums up numbers
-int StringCalculator::sumNumbers(const std::vector<int>& numbers) {
-    return std::accumulate(numbers.begin(), numbers.end(), 0);
-}
-
-// Filters out numbers greater than 1000
-std::vector<int> StringCalculator::filterLargeNumbers(const std::vector<int>& numbers) {
+std::vector<int> StringCalculator::filterLargeNumbers() {
     std::vector<int> filtered;
-    std::copy_if(numbers.begin(), numbers.end(), std::back_inserter(filtered), [](int n){ return n <= 1000; });
+    std::copy_if(parsedNumbers.begin(), parsedNumbers.end(), std::back_inserter(filtered), [](int n){ return n <= 1000; });
     return filtered;
+}
+
+int StringCalculator::sumOfNumbers() {
+    return std::accumulate(parsedNumbers.begin(), parsedNumbers.end(), 0);
 }
